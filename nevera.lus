@@ -1,0 +1,117 @@
+node TempCamera(camara:real^4; Tmin,Tmax:real) returns (media:real; alarma_rango, alarma_desv:bool);
+var 
+     array_alarma_rango:bool^4;  array_limites:real^2; Tsensormax,Tsensormin: real;
+let
+     media=red<<hacer_media,4>>(0.0,camara);
+     
+     (array_limites,array_alarma_rango)=fillred<<calcular_alarma_rango,4>>([Tmin,Tmax],camara);
+     alarma_rango= red<<or,4>>(false,array_alarma_rango);
+     
+     Tsensormax=red<<calcular_maximo,4>>(camara[0],camara);
+     Tsensormin=red<<calcular_minimo,4>>(camara[0],camara);
+     alarma_desv= (Tsensormax - Tsensormin) > 2.0;  
+tel
+    
+function hacer_media(in_acc,temps:real) returns (media:real);
+let
+     media=in_acc + (temps/4.0);
+tel
+     
+function calcular_alarma_rango(in_acc:real^2;temps:real) returns (out_acc:real^2;fuera_rango:bool);
+let
+     out_acc=in_acc;
+     fuera_rango = (in_acc[0] > temps) or (in_acc[1] < temps);
+tel
+     
+function calcular_maximo(in_acc,valores:real) returns (max:real);
+let
+     max= if in_acc > valores then in_acc else valores;
+tel
+     
+function calcular_minimo(in_acc,valores:real) returns (min:real);
+let
+     min= if in_acc < valores then in_acc else valores;
+tel
+
+node CameraHistory (media_actual: real) returns (alarma_tendencia:bool)
+var
+   pre_media, prepre_media, media_estimada, diferencia_medias : real;
+let
+   pre_media = media_actual -> pre(media_actual);
+   prepre_media = media_actual -> pre(pre_media);
+   media_estimada = (media_actual + pre_media + prepre_media) / 3.0;
+   diferencia_medias = media_actual - media_estimada;
+   alarma_tendencia = if diferencia_medias > 1.0 or diferencia_medias < -1.0 
+		      then true else false;
+tel
+
+node SistemaFrio (lecturas:real^4^3) returns (medias_camaras: real^3; media_global: real; 
+                                             alarmas_rango: bool^3; alarmas_desv: bool^3; 
+                                             alarma_tendencia: bool^3; n_diagnosticos: int);
+var
+    m1: real; ar1, ad1, at1, diag1: bool; n1: int;
+    m2: real; ar2, ad2, at2, diag2: bool; n2: int;
+    m3: real; ar3, ad3, at3, diag3: bool; n3: int;
+    
+let
+    (m1, ar1, ad1) = TempCamera(lecturas[0], 0.0, 6.0);
+    at1 = CameraHistory(m1); 
+    diag1 = ar1 or ad1 or at1;    
+    n1 = if diag1 then 1 else 0;
+
+    (m2, ar2, ad2) = TempCamera(lecturas[1], 0.0, 6.0);
+    at2 = CameraHistory(m2);    
+    diag2 = ar2 or ad2 or at2;
+    n2 = if diag2 then 1 else 0;
+
+    (m3, ar3, ad3) = TempCamera(lecturas[2], 0.0, 6.0);
+    at3 = CameraHistory(m3);    
+    diag3 = ar3 or ad3 or at3;
+    n3 = if diag3 then 1 else 0;
+
+    medias_camaras = [m1, m2, m3];
+    alarmas_rango = [ar1, ar2, ar3];
+    alarmas_desv = [ad1, ad2, ad3];
+    alarma_tendencia = [at1, at2, at3];
+    
+    media_global = (m1 + m2 + m3) / 3.0;
+     
+    n_diagnosticos = n1 + n2 + n3;
+tel
+   
+node Main (pass:int) 
+returns (
+    medias_camaras: real^3;
+    media_global: real;
+    alarmas_rango: bool^3;
+    alarmas_desv: bool^3;
+    alarma_tendencia: bool^3;
+    n_diagnosticos: int;
+    paso: int
+);
+var
+    lecturas: real^4^3; c1, c2, c3: real^4;
+let
+    paso = 1 -> pre(paso) + 1;
+
+    c1 = if paso = 1 then [3.0, 3.0, 3.0, 3.0]      
+         else if paso = 2 then [4.5, 4.5, 4.5, 4.5] 
+         else if paso = 3 then [6.5, 6.5, 6.5, 6.5] 
+         else [6.5, 6.5, 6.5, 6.5];                  
+
+    c2 = if paso = 1 then [3.0, 3.0, 3.0, 3.0]      
+         else if paso = 2 then [3.0, 3.0, 3.0, 3.0] 
+         else if paso = 3 then [3.0, 3.0, 3.0, 3.0] 
+         else if paso = 4 then [-2.0, -2.0, -2.0, -2.0] 
+         else [-2.0, -2.0, -2.0, -2.0];             
+
+    c3 = if paso = 1 then [3.0, 3.0, 3.0, 3.0]      
+         else if paso = 2 then [3.0, 3.0, 3.0, 3.0] 
+         else if paso = 3 then [3.0, 3.0, 3.0, 3.0] 
+         else if paso = 4 then [3.0, 3.0, 3.0, 3.0] 
+         else [5.5, 5.5, 5.5, 5.5];                   
+                                                     
+    lecturas = [c1, c2, c3];
+
+    (medias_camaras, media_global, alarmas_rango, alarmas_desv, alarma_tendencia, n_diagnosticos) = SistemaFrio(lecturas);
+tel
